@@ -1,0 +1,36 @@
+name: v1-liquidity-monitor
+
+plugins:
+  - name: alchemy
+    version: 0.8.0
+  - name: etherscan
+    version: 0.8.0
+  - name: solidity
+    version: 0.8.2
+  - name: foundry
+    version: 0.8.0
+  - name: aws
+    version: 0.8.0-alpha.3
+
+default_ecosystem: ethereum
+
+ethereum:
+  default_network: ethereum
+  mainnet_fork:
+    default_provider: foundry
+
+foundry:
+  fork:
+    ethereum:
+      mainnet:
+        upstream_provider: alchemy
+      sepolia:
+        upstream_provider: alchemy
+
+dependencies:
+  - name: marginal-v1-core
+    github: MarginalProtocol/v1-core
+    ref: v1.0.1
+
+solidity:
+  via_ir: true
