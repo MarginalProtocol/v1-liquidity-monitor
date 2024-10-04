@@ -3,7 +3,7 @@
 Bot to monitor pool liquidity for Marginal v1. Alerts when the invariant
 
 ```python
-liquidityReturned >= liquidityOwed
+liquidityReturned >= position.liquidityLocked  # (owed)
 ```
 
 is broken for position settlement and liquidation. Should only occur in extreme
