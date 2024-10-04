@@ -1,0 +1,18 @@
+# Ape stuff
+.build/
+.cache/
+.coverage
+.db/
+
+# Python
+.env
+.venv
+.pytest_cache
+.hypothesis
+__pycache__
+.python-version
+uv.lock
+
+# node
+node_modules
+*.lock
