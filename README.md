@@ -6,7 +6,7 @@ Bot to monitor pool liquidity for Marginal v1. Alerts when the invariant
 liquidityReturned >= position.liquidityLocked  # (owed)
 ```
 
-is broken for position settlement and liquidation. Should only occur in extreme
+is broken for position settlement or liquidation. Should only occur in extreme
 funding payment cases.
 
 ## Installation
