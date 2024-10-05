@@ -2,7 +2,7 @@ import click
 import os
 import pandas as pd
 
-from typing import Annotated, Dict
+from typing import Annotated
 
 from eth_abi.packed import encode_packed
 from eth_utils import keccak
@@ -44,8 +44,9 @@ def get_position_key(address: str, id: int) -> bytes:
 
 def handle_position_close(
     block_number: int,
-    ev_name: str,
-    ev_args: Dict,
+    event_name: str,
+    position_owner: str,
+    position_id: int,
     liquidity_before: int,
     liquidity_after: int,
 ):
@@ -57,18 +58,22 @@ def handle_position_close(
 
     Alerts via message if invariant broken (should only occur in extreme funding cases).
     """
-    k = get_position_key(ev_args["owner"], ev_args["id"])
+    k = get_position_key(position_owner, position_id)
     position = pool.positions(k, block_identifier=block_number - 1)
     liquidity_returned = liquidity_after - liquidity_before
 
-    if liquidity_returned < position.liquidityLocked:
-        liquidity_lost = position.liquidityLocked - liquidity_returned
+    liquidity_gained = liquidity_returned - position.liquidityLocked
+    if liquidity_gained < 0:
         click.secho(
-            f"Pool {ev_name} on position {ev_args['id']} at block number {block_number} lost liquidity: {liquidity_lost}",
+            f"Pool {event_name} on position {position_id} at block number {block_number} lost liquidity: {-liquidity_gained}",
             blink=True,
             bold=True,
         )
         # TODO: send alert through messenger
+    else:
+        click.echo(
+            f"Pool {event_name} on position {position_id} at block number {block_number} gained liquidity: {liquidity_gained}"
+        )
 
 
 # This is how we trigger off of new blocks
@@ -110,7 +115,12 @@ def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
 
         if row.event_name == "Settle" or row.event_name == "Liquidate":
             handle_position_close(
-                block.number, row.event_name, ev_args, liquidity, liquidity_after
+                block.number,
+                row.event_name,
+                ev_args["owner"],
+                ev_args["id"],
+                liquidity,
+                liquidity_after,
             )
             count += 1
 
