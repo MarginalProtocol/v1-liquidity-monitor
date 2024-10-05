@@ -140,5 +140,5 @@ def app_shutdown():
 # Just in case you need to release some resources or something inside each worker
 @app.on_worker_shutdown()
 def worker_shutdown(state: TaskiqState):  # NOTE: You need the type hint here
-    pass
+    return
     # raise Exception  # NOTE: Any exception raised on worker shutdown is ignored

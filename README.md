@@ -7,7 +7,7 @@ liquidityReturned >= position.liquidityLocked  # (owed)
 ```
 
 is broken for position settlement or liquidation. Should only occur in extreme
-funding payment cases.
+funding payment cases, as LPs should not experience bad debt.
 
 ## Installation
 
