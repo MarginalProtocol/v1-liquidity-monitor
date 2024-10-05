@@ -9,11 +9,9 @@ from eth_utils import keccak
 
 from ape import chain, Contract
 from ape.api import BlockAPI
-from ape.types import ContractLog
-from ape_tokens import tokens  # type: ignore[import]
 from taskiq import Context, TaskiqDepends, TaskiqState
 
-from silverback import AppState, CircuitBreaker, SilverbackApp
+from silverback import AppState, SilverbackApp
 
 # Do this first to initialize your app
 app = SilverbackApp()
@@ -46,7 +44,7 @@ def get_position_key(address: str, id: int) -> bytes:
 
 def handle_position_close(
     block_number: int,
-    ev_name: string,
+    ev_name: str,
     ev_args: Dict,
     liquidity_before: int,
     liquidity_after: int,
