@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10,<4"
 dependencies = [
     "eth-ape==0.8.15",
+    "python-telegram-bot>=21.6",
     "silverback==0.5.8",
 ]
 

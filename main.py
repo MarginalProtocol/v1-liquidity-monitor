@@ -1,4 +1,3 @@
-import click
 import os
 import pandas as pd
 
@@ -8,9 +7,11 @@ from eth_abi.packed import encode_packed
 from eth_utils import keccak
 
 from ape import chain, Contract
+from ape.logging import logger, LogLevel
 from ape.api import BlockAPI
 from taskiq import Context, TaskiqDepends, TaskiqState
 
+from telegram import Bot
 from silverback import AppState, SilverbackApp
 
 # Do this first to initialize your app
@@ -19,8 +20,11 @@ app = SilverbackApp()
 # Marginal v1 pool contract
 pool = Contract(os.environ["CONTRACT_ADDRESS_MARGV1_POOL"])
 
-
-# TODO: messenger client class
+# Telegram bot variables
+# TODO: abstact away in messenger client class
+_bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+bot = Bot(token=_bot_token) if _bot_token else None
+channel = os.environ.get("TELEGRAM_CHANNEL_ID", "")
 
 
 @app.on_startup()
@@ -62,18 +66,26 @@ def handle_position_close(
     position = pool.positions(k, block_identifier=block_number - 1)
     liquidity_returned = liquidity_after - liquidity_before
 
-    liquidity_gained = liquidity_returned - position.liquidityLocked
-    if liquidity_gained < 0:
-        click.secho(
-            f"Pool {event_name} on position {position_id} at block number {block_number} lost liquidity: {-liquidity_gained}",
-            blink=True,
-            bold=True,
-        )
-        # TODO: send alert through messenger
-    else:
-        click.echo(
-            f"Pool {event_name} on position {position_id} at block number {block_number} gained liquidity: {liquidity_gained}"
-        )
+    logger.info(f"Position liquidity locked: {position.liquidityLocked}")
+    logger.info(f"Position liquidity returned on close: {liquidity_returned}")
+
+    msg = (
+        f"🚨 Pool {event_name} on position {position_id} at block number {block_number} lost liquidity. liquidity_returned / position.liquidityLocked: {liquidity_returned / position.liquidityLocked} 🚨"
+        if liquidity_returned < position.liquidityLocked
+        else f"Pool {event_name} on position {position_id} at block number {block_number} gained liquidity. liquidity_returned / position.liquidityLocked: {liquidity_returned / position.liquidityLocked}"
+    )
+    method = "error" if liquidity_returned < position.liquidityLocked else "success"
+    getattr(logger, method)(msg)
+
+    # send message to channel based on log level and liquidity gained/lost
+    send = (
+        liquidity_returned >= position.liquidityLocked
+        and logger.level <= LogLevel.SUCCESS
+    ) or (
+        liquidity_returned < position.liquidityLocked and logger.level <= LogLevel.ERROR
+    )
+    if bot and send:
+        bot.send_message(channel_id=channel, text=msg)
 
 
 # This is how we trigger off of new blocks
@@ -81,22 +93,26 @@ def handle_position_close(
 # NOTE: The type hint for block is `BlockAPI`, but we parse it using `EcosystemAPI`
 # NOTE: If you need something from worker state, you have to use taskiq context
 def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
-    click.echo(f"New block found with block number: {block.number}")
+    logger.info(f"Block found with block number: {block.number}")
     # cache pool liquidity, liquidityLocked values from end of prior block to use as ref in events
     # @dev pool state for eth_call will be values after all transactions executed in block
     liquidity = pool.state(block_id=block.number - 1).liquidity
-    click.echo(
+    logger.info(
         f"Pool liquidity at end of prior block with block number {block.number-1}: {liquidity}"
     )
 
     # handle any state changing events that have occured in this block
     events = [pool.Open, pool.Settle, pool.Liquidate, pool.Swap, pool.Mint, pool.Burn]
+    logger.info(f"Querying for pool events in block number {block.number} ...")
     queries = [
-        ev.query("*", start_block=block.number, stop_block=block.number + 1)
+        ev.query("*", start_block=block.number, stop_block=block.number)
         for ev in events
     ]
     df = pd.concat(queries)
     df = df.sort_values(["transaction_index", "log_index"])
+    logger.info(f"Pool events found in block number {block.number}: {len(df)}")
+    if not df.empty:
+        logger.info(f"Pool events in block number {block.number}: {df}")
 
     # loop through logs sorted by log index to reconstruct pool state changes within block
     count = 0
@@ -127,6 +143,7 @@ def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
         # update cached liquidity for next event in block
         liquidity = liquidity_after
 
+    logger.info(f"Total positions closed in block number {block.number}: {count}")
     return count
 
 

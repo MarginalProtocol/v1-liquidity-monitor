@@ -26,10 +26,12 @@ Include environment variables for the address of the [`MarginalV1Pool`](https://
 
 ```sh
 export CONTRACT_ADDRESS_MARGV1_POOL=<address of marginal v1 pool contract on network>
+export TELEGRAM_BOT_TOKEN=<telegram bot token>
+export TELEGRAM_CHANNEL_ID=<telegram channel ID to send messages to>
 ```
 
 Then run silverback
 
 ```sh
-silverback run "main:app" --network :mainnet:alchemy --account acct-name
+uv run silverback run "main:app" --network :mainnet:alchemy
 ```
