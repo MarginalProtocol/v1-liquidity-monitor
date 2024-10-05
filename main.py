@@ -24,7 +24,7 @@ pool = Contract(os.environ["CONTRACT_ADDRESS_MARGV1_POOL"])
 # TODO: abstact away in messenger client class
 _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = Bot(token=_bot_token) if _bot_token else None
-chat = os.environ["TELEGRAM_CHAT_ID"]
+chat = os.environ["TELEGRAM_CHAT_ID"] if bot else None
 
 
 @app.on_startup()
@@ -158,20 +158,7 @@ async def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends(
     logger.info(f"Total positions closed in block number {block.number}: {closed}")
 
     # summary for block
-    msg = f"""
-    Block found with block number {block.number} ....
-
-    Pool liquidity (start): {liquidity_before}
-    Pool liquidity (end): {liquidity}
-    Pool liquidity delta: {liquidity - liquidity_before}
-
-    Positions opened: {opened}
-    Positions closed: {closed}
-
-    Swaps: {counts["Swap"]}
-    Liquidity adds: {counts["Mint"]}
-    Liquidity removes: {counts["Burn"]}
-    """
+    msg = f"⛓️ Block found with block number {block.number} ....\n\nPool liquidity (start): {liquidity_before}\nPool liquidity (end): {liquidity}\nPool liquidity delta: {liquidity - liquidity_before}\n\nPositions opened: {opened}\nPositions closed: {closed}\n\nSwaps: {counts['Swap']}\nLiquidity adds: {counts['Mint']}\nLiquidity removes: {counts['Burn']} ⛓️"
     logger.info(msg)
     await attempt_send_message(msg, LogLevel.INFO)
     return counts

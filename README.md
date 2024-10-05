@@ -26,6 +26,11 @@ Include environment variables for the address of the [`MarginalV1Pool`](https://
 
 ```sh
 export CONTRACT_ADDRESS_MARGV1_POOL=<address of marginal v1 pool contract on network>
+```
+
+and (optionally) the bot to send alert messages with
+
+```sh
 export TELEGRAM_BOT_TOKEN=<telegram bot token>
 export TELEGRAM_CHAT_ID=<telegram chat ID to send messages to>
 ```
