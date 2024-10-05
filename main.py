@@ -24,7 +24,7 @@ pool = Contract(os.environ["CONTRACT_ADDRESS_MARGV1_POOL"])
 # TODO: abstact away in messenger client class
 _bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
 bot = Bot(token=_bot_token) if _bot_token else None
-channel = os.environ.get("TELEGRAM_CHANNEL_ID", "")
+chat = os.environ["TELEGRAM_CHAT_ID"]
 
 
 @app.on_startup()
@@ -46,7 +46,16 @@ def get_position_key(address: str, id: int) -> bytes:
     return keccak(encode_packed(["address", "uint96"], [address, id]))
 
 
-def handle_position_close(
+async def attempt_send_message(msg: str, level: int):
+    """
+    Attempts to send message if logger.level > level
+    """
+    if bot is None or logger.level > level:
+        return
+    await bot.send_message(chat_id=chat, text=msg)
+
+
+async def handle_position_close(
     block_number: int,
     event_name: str,
     position_owner: str,
@@ -72,27 +81,25 @@ def handle_position_close(
     msg = (
         f"🚨 Pool {event_name} on position {position_id} at block number {block_number} lost liquidity. liquidity_returned / position.liquidityLocked: {liquidity_returned / position.liquidityLocked} 🚨"
         if liquidity_returned < position.liquidityLocked
-        else f"Pool {event_name} on position {position_id} at block number {block_number} gained liquidity. liquidity_returned / position.liquidityLocked: {liquidity_returned / position.liquidityLocked}"
+        else f"✅ Pool {event_name} on position {position_id} at block number {block_number} gained liquidity. liquidity_returned / position.liquidityLocked: {liquidity_returned / position.liquidityLocked} ✅"
     )
     method = "error" if liquidity_returned < position.liquidityLocked else "success"
     getattr(logger, method)(msg)
 
-    # send message to channel based on log level and liquidity gained/lost
-    send = (
-        liquidity_returned >= position.liquidityLocked
-        and logger.level <= LogLevel.SUCCESS
-    ) or (
-        liquidity_returned < position.liquidityLocked and logger.level <= LogLevel.ERROR
+    # send message to chat based on log level and liquidity gained/lost
+    level = (
+        LogLevel.ERROR
+        if liquidity_returned < position.liquidityLocked
+        else LogLevel.SUCCESS
     )
-    if bot and send:
-        bot.send_message(channel_id=channel, text=msg)
+    await attempt_send_message(msg, level)
 
 
 # This is how we trigger off of new blocks
 @app.on_(chain.blocks)
 # NOTE: The type hint for block is `BlockAPI`, but we parse it using `EcosystemAPI`
 # NOTE: If you need something from worker state, you have to use taskiq context
-def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
+async def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
     logger.info(f"Block found with block number: {block.number}")
     # cache pool liquidity, liquidityLocked values from end of prior block to use as ref in events
     # @dev pool state for eth_call will be values after all transactions executed in block
@@ -115,7 +122,8 @@ def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
         logger.info(f"Pool events in block number {block.number}: {df}")
 
     # loop through logs sorted by log index to reconstruct pool state changes within block
-    count = 0
+    counts = {"Open": 0, "Settle": 0, "Liquidate": 0, "Swap": 0, "Mint": 0, "Burn": 0}
+    liquidity_before = liquidity
     for _, row in df.iterrows():
         ev_args = row.event_arguments
         if "liquidityAfter" in ev_args:
@@ -130,7 +138,7 @@ def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
             liquidity_after = liquidity + sign * ev_args["liquidityDelta"]
 
         if row.event_name == "Settle" or row.event_name == "Liquidate":
-            handle_position_close(
+            await handle_position_close(
                 block.number,
                 row.event_name,
                 ev_args["owner"],
@@ -138,13 +146,35 @@ def exec_block(block: BlockAPI, context: Annotated[Context, TaskiqDepends()]):
                 liquidity,
                 liquidity_after,
             )
-            count += 1
+
+        # increment counts
+        counts[row.event_name] += 1
 
         # update cached liquidity for next event in block
         liquidity = liquidity_after
 
-    logger.info(f"Total positions closed in block number {block.number}: {count}")
-    return count
+    opened = counts["Open"]
+    closed = counts["Settle"] + counts["Liquidate"]
+    logger.info(f"Total positions closed in block number {block.number}: {closed}")
+
+    # summary for block
+    msg = f"""
+    Block found with block number {block.number} ....
+
+    Pool liquidity (start): {liquidity_before}
+    Pool liquidity (end): {liquidity}
+    Pool liquidity delta: {liquidity - liquidity_before}
+
+    Positions opened: {opened}
+    Positions closed: {closed}
+
+    Swaps: {counts["Swap"]}
+    Liquidity adds: {counts["Mint"]}
+    Liquidity removes: {counts["Burn"]}
+    """
+    logger.info(msg)
+    await attempt_send_message(msg, LogLevel.INFO)
+    return counts
 
 
 # A final job to execute on Silverback shutdown
